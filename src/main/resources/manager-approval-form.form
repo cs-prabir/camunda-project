@@ -1,0 +1,71 @@
+{
+  "components": [
+    {
+      "text": "# Manager Loan Approval\nPlease review the application details below and provide your decision.",
+      "type": "text",
+      "id": "text_header"
+    },
+    {
+      "label": "Application ID",
+      "type": "textfield",
+      "id": "textfield_appId",
+      "key": "applicationId",
+      "readonly": true
+    },
+    {
+      "label": "Credit Score",
+      "type": "number",
+      "id": "number_creditScore",
+      "key": "creditScore",
+      "readonly": true
+    },
+    {
+      "label": "Fraud Detected",
+      "type": "checkbox",
+      "id": "checkbox_fraud",
+      "key": "fraudDetected",
+      "readonly": true
+    },
+    {
+      "label": "Documents Valid",
+      "type": "checkbox",
+      "id": "checkbox_docs",
+      "key": "documentValid",
+      "readonly": true
+    },
+    {
+      "label": "Approval Decision",
+      "type": "select",
+      "id": "select_decision",
+      "key": "approved",
+      "values": [
+        {
+          "label": "Approve",
+          "value": true
+        },
+        {
+          "label": "Reject",
+          "value": false
+        }
+      ],
+      "validate": {
+        "required": true
+      }
+    },
+    {
+      "label": "Manager Comments",
+      "type": "textarea",
+      "id": "textarea_comments",
+      "key": "managerComments"
+    }
+  ],
+  "type": "default",
+  "id": "manager-approval-form",
+  "executionPlatform": "Camunda Cloud",
+  "executionPlatformVersion": "8.5.0",
+  "exporter": {
+    "name": "Camunda Modeler",
+    "version": "5.20.0"
+  },
+  "schemaVersion": 16
+}

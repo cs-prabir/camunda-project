@@ -1,0 +1,25 @@
+POST
+
+http://localhost:8085/api/loan/submit
+{"applicantName": "John Doe",
+"loanAmount": 50000,
+"creditScore": 800,
+"fraudDetected": false,
+"managerId": "mgr123",
+"documentValid": true }
+
+============
+POST http://localhost:8085/api/loan/feedback/0d911d2b-fca3-4efb-b665-77d7a99f5781
+
+{
+  "feedbackComments": "Application processed successfully",
+  "rating": 5,
+  "status": "completed",
+  "reviewedBy": "reviewer@example.com",
+  "timestamp": "2026-04-12T10:30:00Z"
+}
+
+======
+
+POST
+http://localhost:8085/api/loan/cancel/83b87a0f-a408-44dc-bc5e-0f6adb568b96

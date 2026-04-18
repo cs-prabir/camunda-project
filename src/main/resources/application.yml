@@ -1,0 +1,23 @@
+#camunda:
+ # client:
+  #  mode: self-managed
+   # zeebe:
+    #  enabled: true
+      #grpc-address: http://127.0.0.1:26500
+     # rest-address: http://localhost:8080/
+# https://docs.camunda.io/docs/apis-tools/spring-zeebe-sdk/getting-started/
+# https://docs.camunda.io/docs/apis-tools/spring-zeebe-sdk/configuration/
+spring:
+  application:
+    name: camunda-worker
+server:
+    port: 8268
+camunda:
+  client:
+    mode: saas
+    auth:
+      client-id: 2CEJTyFQel.EDpdHm6ZWMM32-~u89HPS
+      client-secret: RUSRmoOSFFFQ1tgjbP6dLVKSZKeNSLF2KGHEKVhLjUIqSnlzLlw3LlkjJztVCrLh
+    cloud:
+      cluster-id: 69a54027-848a-41fb-9564-560c576aa706
+      region: sin-2
