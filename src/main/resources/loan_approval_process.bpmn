@@ -15,13 +15,37 @@
       <zeebe:subscription correlationKey="=applicationId" />
     </bpmn:extensionElements>
   </bpmn:message>
+  <bpmn:message id="Message_ReceiveDocs" name="LoanDocumentsReceived">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=applicationId" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:message id="Message_PolicyUpdated" name="LoanPolicyUpdated">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=applicationId" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:message id="Message_Complaint" name="CustomerComplaint">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=applicationId" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:message id="Message_Withdrawal" name="CustomerWithdrawal">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=applicationId" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:signal id="Signal_LoanApproved" name="Signal_LoanApproved" />
   <bpmn:process id="loan_approval_process" name="Loan Approval System" isExecutable="true">
+    <!-- Start -->
     <bpmn:startEvent id="StartEvent_Message" name="Application Submitted">
       <bpmn:outgoing>Flow_Start</bpmn:outgoing>
       <bpmn:messageEventDefinition id="MessageEventDefinition_Start" messageRef="Message_Start" />
     </bpmn:startEvent>
     <bpmn:sequenceFlow id="Flow_Start" sourceRef="StartEvent_Message" targetRef="Gateway_ParallelSplit" />
-    <bpmn:parallelGateway id="Gateway_ParallelSplit" name="Parallel Processing">
+
+    <!-- Phase 1: Parallel Verification -->
+    <bpmn:parallelGateway id="Gateway_ParallelSplit" name="Parallel Split">
       <bpmn:incoming>Flow_Start</bpmn:incoming>
       <bpmn:outgoing>Flow_ToCredit</bpmn:outgoing>
       <bpmn:outgoing>Flow_ToFraud</bpmn:outgoing>
@@ -38,303 +62,598 @@
       <bpmn:outgoing>Flow_ErrorEnd</bpmn:outgoing>
       <bpmn:errorEventDefinition id="ErrorEventDefinition_1" errorRef="Error_CreditAPI" />
     </bpmn:boundaryEvent>
-    <bpmn:sequenceFlow id="Flow_ErrorEnd" sourceRef="BoundaryEvent_CreditError" targetRef="EndEvent_Error" />
-    <bpmn:endEvent id="EndEvent_Error" name="Process Failed">
-      <bpmn:incoming>Flow_ErrorEnd</bpmn:incoming>
-      <bpmn:errorEventDefinition id="ErrorEventDefinition_End" errorRef="Error_Process" />
-    </bpmn:endEvent>
     <bpmn:sequenceFlow id="Flow_ToFraud" sourceRef="Gateway_ParallelSplit" targetRef="ServiceTask_FraudCheck" />
     <bpmn:serviceTask id="ServiceTask_FraudCheck" name="Fraud Check System">
       <bpmn:extensionElements>
-        <zeebe:taskDefinition type="fraud-check" retries="3" />
+        <zeebe:taskDefinition type="fraud-check" />
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_ToFraud</bpmn:incoming>
       <bpmn:outgoing>Flow_FromFraud</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:sequenceFlow id="Flow_FromCredit" sourceRef="ServiceTask_CreditCheck" targetRef="Gateway_ParallelJoin" />
-    <bpmn:sequenceFlow id="Flow_FromFraud" sourceRef="ServiceTask_FraudCheck" targetRef="Gateway_ParallelJoin" />
-    <bpmn:parallelGateway id="Gateway_ParallelJoin">
+    <bpmn:parallelGateway id="Gateway_ParallelJoin" name="Parallel Join">
       <bpmn:incoming>Flow_FromCredit</bpmn:incoming>
       <bpmn:incoming>Flow_FromFraud</bpmn:incoming>
-      <bpmn:outgoing>Flow_ToRiskXOR</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ToInclusive</bpmn:outgoing>
     </bpmn:parallelGateway>
-    <bpmn:sequenceFlow id="Flow_ToRiskXOR" sourceRef="Gateway_ParallelJoin" targetRef="Gateway_Risk" />
-    <bpmn:exclusiveGateway id="Gateway_Risk" name="Is Risk Accepted?" default="Flow_RiskRejected">
-      <bpmn:incoming>Flow_ToRiskXOR</bpmn:incoming>
+    <bpmn:sequenceFlow id="Flow_FromCredit" sourceRef="ServiceTask_CreditCheck" targetRef="Gateway_ParallelJoin" />
+    <bpmn:sequenceFlow id="Flow_FromFraud" sourceRef="ServiceTask_FraudCheck" targetRef="Gateway_ParallelJoin" />
+    <bpmn:sequenceFlow id="Flow_ToInclusive" sourceRef="Gateway_ParallelJoin" targetRef="Gateway_Inclusive" />
+
+    <!-- Phase 2: Inclusive Optional Paths -->
+    <bpmn:inclusiveGateway id="Gateway_Inclusive" name="Optional Services?" default="Flow_ToRisk">
+      <bpmn:incoming>Flow_ToInclusive</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToRisk</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ToInsurance</bpmn:outgoing>
+    </bpmn:inclusiveGateway>
+    <bpmn:sequenceFlow id="Flow_ToRisk" sourceRef="Gateway_Inclusive" targetRef="Gateway_Risk" />
+    <bpmn:sequenceFlow id="Flow_ToInsurance" name="Add Insurance" sourceRef="Gateway_Inclusive" targetRef="ServiceTask_Insurance">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=addInsurance = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:serviceTask id="ServiceTask_Insurance" name="Insurance Provision">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="insurance-provision" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ToInsurance</bpmn:incoming>
+      <bpmn:outgoing>Flow_FromInsur</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:inclusiveGateway id="Gateway_InclusiveJoin">
+      <bpmn:incoming>Flow_FromInsur</bpmn:incoming>
+      <bpmn:incoming>Flow_AfterRiskAccepted</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToDocAcq</bpmn:outgoing>
+    </bpmn:inclusiveGateway>
+    <bpmn:sequenceFlow id="Flow_FromInsur" sourceRef="ServiceTask_Insurance" targetRef="Gateway_InclusiveJoin" />
+
+    <!-- Phase 3: Risk Evaluation -->
+    <bpmn:exclusiveGateway id="Gateway_Risk" name="Risk Acceptable?" default="Flow_RiskRejected">
+      <bpmn:incoming>Flow_ToRisk</bpmn:incoming>
       <bpmn:outgoing>Flow_RiskAccepted</bpmn:outgoing>
       <bpmn:outgoing>Flow_RiskRejected</bpmn:outgoing>
     </bpmn:exclusiveGateway>
+    <bpmn:sequenceFlow id="Flow_RiskAccepted" name="Score &#62; 600" sourceRef="Gateway_Risk" targetRef="Gateway_InclusiveJoin">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=creditScore &gt; 600</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_RiskRejected" sourceRef="Gateway_Risk" targetRef="EndEvent_Rejected" />
-    <bpmn:endEvent id="EndEvent_Rejected" name="Loan Rejected">
+    <bpmn:endEvent id="EndEvent_Rejected" name="Loan Rejected (High Risk)">
       <bpmn:incoming>Flow_RiskRejected</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:sequenceFlow id="Flow_RiskAccepted" name="Score &#62; 600 and Fraud = false" sourceRef="Gateway_Risk" targetRef="CallActivity_DocVerif">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=creditScore &gt; 600 and fraudDetected = false</bpmn:conditionExpression>
-    </bpmn:sequenceFlow>
-    <bpmn:callActivity id="CallActivity_DocVerif" name="Document Verification" calledElement="document_verification">
+
+    <!-- Phase 4: Acquisition & Verification -->
+    <bpmn:sequenceFlow id="Flow_ToDocAcq" sourceRef="Gateway_InclusiveJoin" targetRef="SubProcess_DocAcquisition" />
+    <bpmn:subProcess id="SubProcess_DocAcquisition" name="Document Acquisition">
+      <bpmn:incoming>Flow_ToDocAcq</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToDocVerif</bpmn:outgoing>
+      <bpmn:startEvent id="StartEvent_DocAcq" name="Start">
+        <bpmn:outgoing>Flow_ToReq</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:sequenceFlow id="Flow_ToReq" sourceRef="StartEvent_DocAcq" targetRef="ServiceTask_RequestDocs" />
+      <bpmn:serviceTask id="ServiceTask_RequestDocs" name="Request Documents">
+        <bpmn:extensionElements>
+          <zeebe:taskDefinition type="request-docs-worker" />
+        </bpmn:extensionElements>
+        <bpmn:incoming>Flow_ToReq</bpmn:incoming>
+        <bpmn:outgoing>Flow_ToRec</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:sequenceFlow id="Flow_ToRec" sourceRef="ServiceTask_RequestDocs" targetRef="ReceiveTask_ReceiveDocs" />
+      <bpmn:receiveTask id="ReceiveTask_ReceiveDocs" name="Receive Documents" messageRef="Message_ReceiveDocs">
+        <bpmn:extensionElements>
+          <zeebe:subscription correlationKey="=applicationId" />
+        </bpmn:extensionElements>
+        <bpmn:incoming>Flow_ToRec</bpmn:incoming>
+        <bpmn:outgoing>Flow_ToEndAcq</bpmn:outgoing>
+      </bpmn:receiveTask>
+      <bpmn:endEvent id="EndEvent_DocAcq" name="Acquired">
+        <bpmn:incoming>Flow_ToEndAcq</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="Flow_ToEndAcq" sourceRef="ReceiveTask_ReceiveDocs" targetRef="EndEvent_DocAcq" />
+    </bpmn:subProcess>
+    <bpmn:sequenceFlow id="Flow_ToDocVerif" sourceRef="SubProcess_DocAcquisition" targetRef="CallActivity_DocVerif" />
+    <bpmn:callActivity id="CallActivity_DocVerif" name="Verify Documents" calledElement="document_verification">
       <bpmn:extensionElements>
         <zeebe:calledElement processId="document_verification" propagateAllChildVariables="false" />
-        <zeebe:ioMapping>
-          <zeebe:input source="=applicationId" target="applicationId" />
-          <zeebe:output source="=documentValid" target="documentValid" />
-        </zeebe:ioMapping>
       </bpmn:extensionElements>
-      <bpmn:incoming>Flow_RiskAccepted</bpmn:incoming>
-      <bpmn:outgoing>Flow_ToUserTask</bpmn:outgoing>
+      <bpmn:incoming>Flow_ToDocVerif</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToDMN</bpmn:outgoing>
     </bpmn:callActivity>
-    <bpmn:sequenceFlow id="Flow_ToUserTask" sourceRef="CallActivity_DocVerif" targetRef="UserTask_ManagerApproval" />
-    <bpmn:userTask id="UserTask_ManagerApproval" name="Manager Approval">
+    <bpmn:sequenceFlow id="Flow_ToDMN" sourceRef="CallActivity_DocVerif" targetRef="BusinessRuleTask_ApproveAmount" />
+
+    <!-- Phase 5: Decisioning -->
+    <bpmn:businessRuleTask id="BusinessRuleTask_ApproveAmount" name="Approve Loan Amount">
+      <bpmn:extensionElements>
+        <zeebe:calledDecision decisionId="loan-decision" resultVariable="approval" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ToDMN</bpmn:incoming>
+      <bpmn:outgoing>Flow_AfterDMN</bpmn:outgoing>
+    </bpmn:businessRuleTask>
+    <bpmn:sequenceFlow id="Flow_AfterDMN" sourceRef="BusinessRuleTask_ApproveAmount" targetRef="Gateway_DMNResult" />
+    <bpmn:exclusiveGateway id="Gateway_DMNResult" name="Review Needed?" default="Flow_ToRejectedDMN">
+      <bpmn:incoming>Flow_AfterDMN</bpmn:incoming>
+      <bpmn:outgoing>Flow_AutoApproved</bpmn:outgoing>
+      <bpmn:outgoing>Flow_NeedsReview</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ToRejectedDMN</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sequenceFlow id="Flow_AutoApproved" name="Approved" sourceRef="Gateway_DMNResult" targetRef="IntermediateCatch_PolicyUpdated">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=approval = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_NeedsReview" name="Manual Review" sourceRef="Gateway_DMNResult" targetRef="UserTask_ManualReview">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=needsReview = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_ToRejectedDMN" sourceRef="Gateway_DMNResult" targetRef="EndEvent_AutoRejected" />
+    <bpmn:endEvent id="EndEvent_AutoRejected" name="Auto Rejected">
+      <bpmn:incoming>Flow_ToRejectedDMN</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:userTask id="UserTask_ManualReview" name="Manual Final Review">
       <bpmn:extensionElements>
         <zeebe:userTask />
-        <zeebe:formDefinition formId="manager-approval-form" />
       </bpmn:extensionElements>
-      <bpmn:incoming>Flow_ToUserTask</bpmn:incoming>
-      <bpmn:outgoing>Flow_ToEventBased</bpmn:outgoing>
+      <bpmn:incoming>Flow_NeedsReview</bpmn:incoming>
+      <bpmn:outgoing>Flow_FromManual</bpmn:outgoing>
     </bpmn:userTask>
-    <bpmn:boundaryEvent id="BoundaryEvent_SLA" name="SLA 24h" cancelActivity="false" attachedToRef="UserTask_ManagerApproval">
-      <bpmn:outgoing>Flow_SLAEscalation</bpmn:outgoing>
-      <bpmn:timerEventDefinition id="TimerEventDefinition_1">
-        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT3M</bpmn:timeDuration>
+    <bpmn:boundaryEvent id="BoundaryEvent_SLA" name="SLA 24h" cancelActivity="false" attachedToRef="UserTask_ManualReview">
+      <bpmn:outgoing>Flow_Escalation</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TimerEventDefinition_SLA">
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT24H</bpmn:timeDuration>
       </bpmn:timerEventDefinition>
     </bpmn:boundaryEvent>
-    <bpmn:sequenceFlow id="Flow_SLAEscalation" sourceRef="BoundaryEvent_SLA" targetRef="ScriptTask_Escalation" />
-    <bpmn:serviceTask id="ScriptTask_Escalation" name="Trigger Escalation">
+    <bpmn:boundaryEvent id="BoundaryEvent_Withdraw" name="Withdrawn" attachedToRef="UserTask_ManualReview">
+      <bpmn:outgoing>Flow_Withdrawal</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageEventDefinition_Withdraw" messageRef="Message_Withdrawal" />
+    </bpmn:boundaryEvent>
+    <bpmn:sequenceFlow id="Flow_Escalation" sourceRef="BoundaryEvent_SLA" targetRef="ServiceTask_Escalate" />
+    <bpmn:serviceTask id="ServiceTask_Escalate" name="Send Escalation Notice">
       <bpmn:extensionElements>
-        <zeebe:taskDefinition type="script-worker-escalation" />
+        <zeebe:taskDefinition type="escalation-worker" />
       </bpmn:extensionElements>
-      <bpmn:incoming>Flow_SLAEscalation</bpmn:incoming>
-      <bpmn:outgoing>Flow_SLAEnd</bpmn:outgoing>
+      <bpmn:incoming>Flow_Escalation</bpmn:incoming>
+      <bpmn:outgoing>Flow_EndEscalation</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:sequenceFlow id="Flow_SLAEnd" sourceRef="ScriptTask_Escalation" targetRef="EndEvent_SLA" />
-    <bpmn:endEvent id="EndEvent_SLA" name="Escalated">
-      <bpmn:incoming>Flow_SLAEnd</bpmn:incoming>
+    <bpmn:endEvent id="EndEvent_Escalated">
+      <bpmn:incoming>Flow_EndEscalation</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:sequenceFlow id="Flow_ToEventBased" sourceRef="UserTask_ManagerApproval" targetRef="Gateway_EventBased" />
-    <bpmn:eventBasedGateway id="Gateway_EventBased" name="Wait for Contract">
-      <bpmn:incoming>Flow_ToEventBased</bpmn:incoming>
-      <bpmn:outgoing>Flow_ToCatchMessage</bpmn:outgoing>
-      <bpmn:outgoing>Flow_ToCatchTimer</bpmn:outgoing>
-    </bpmn:eventBasedGateway>
-    <bpmn:sequenceFlow id="Flow_ToCatchMessage" sourceRef="Gateway_EventBased" targetRef="IntermediateCatch_CustomerSig" />
-    <bpmn:intermediateCatchEvent id="IntermediateCatch_CustomerSig" name="Customer Feedback">
-      <bpmn:incoming>Flow_ToCatchMessage</bpmn:incoming>
-      <bpmn:outgoing>Flow_ToApproveEnd</bpmn:outgoing>
-      <bpmn:messageEventDefinition id="MessageEventDefinition_2" messageRef="Message_CustomerFeedback" />
+    <bpmn:sequenceFlow id="Flow_EndEscalation" sourceRef="ServiceTask_Escalate" targetRef="EndEvent_Escalated" />
+    <bpmn:sequenceFlow id="Flow_Withdrawal" sourceRef="BoundaryEvent_Withdraw" targetRef="EndEvent_Withdrawn" />
+    <bpmn:endEvent id="EndEvent_Withdrawn" name="Process Withdrawn">
+      <bpmn:incoming>Flow_Withdrawal</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_FromManual" sourceRef="UserTask_ManualReview" targetRef="IntermediateCatch_PolicyUpdated" />
+
+    <!-- Phase 6: Closing -->
+    <bpmn:intermediateCatchEvent id="IntermediateCatch_PolicyUpdated" name="Wait for Policy Update">
+      <bpmn:incoming>Flow_FromManual</bpmn:incoming>
+      <bpmn:incoming>Flow_AutoApproved</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToEventGateway</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageEventDefinition_PolicyUpdate" messageRef="Message_PolicyUpdated" />
     </bpmn:intermediateCatchEvent>
-    <bpmn:sequenceFlow id="Flow_ToCatchTimer" sourceRef="Gateway_EventBased" targetRef="IntermediateCatch_Timeout" />
-    <bpmn:intermediateCatchEvent id="IntermediateCatch_Timeout" name="Timeout 7 Days">
-      <bpmn:incoming>Flow_ToCatchTimer</bpmn:incoming>
-      <bpmn:outgoing>Flow_TimeoutToReject</bpmn:outgoing>
-      <bpmn:timerEventDefinition id="TimerEventDefinition_2">
-        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT5M</bpmn:timeDuration>
+    <bpmn:sequenceFlow id="Flow_ToEventGateway" sourceRef="IntermediateCatch_PolicyUpdated" targetRef="Gateway_WaitContract" />
+    <bpmn:eventBasedGateway id="Gateway_WaitContract" name="Wait for Signature">
+      <bpmn:incoming>Flow_ToEventGateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_FeedCatch</bpmn:outgoing>
+      <bpmn:outgoing>Flow_TimeCatch</bpmn:outgoing>
+    </bpmn:eventBasedGateway>
+    <bpmn:intermediateCatchEvent id="IntermediateCatch_Feedback" name="Feedback Received">
+      <bpmn:incoming>Flow_FeedCatch</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToBroadcasting</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageEventDefinition_Feedback" messageRef="Message_CustomerFeedback" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:intermediateCatchEvent id="IntermediateCatch_Timeout" name="Signature Timeout (7d)">
+      <bpmn:incoming>Flow_TimeCatch</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToExpired</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TimerEventDefinition_Timeout">
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">P7D</bpmn:timeDuration>
       </bpmn:timerEventDefinition>
     </bpmn:intermediateCatchEvent>
-    <bpmn:sequenceFlow id="Flow_ToApproveEnd" sourceRef="IntermediateCatch_CustomerSig" targetRef="EndEvent_Approved" />
-    <bpmn:endEvent id="EndEvent_Approved" name="Loan Approved">
-      <bpmn:incoming>Flow_ToApproveEnd</bpmn:incoming>
+    <bpmn:sequenceFlow id="Flow_FeedCatch" sourceRef="Gateway_WaitContract" targetRef="IntermediateCatch_Feedback" />
+    <bpmn:sequenceFlow id="Flow_TimeCatch" sourceRef="Gateway_WaitContract" targetRef="IntermediateCatch_Timeout" />
+    <bpmn:sequenceFlow id="Flow_ToExpired" sourceRef="IntermediateCatch_Timeout" targetRef="EndEvent_Expired" />
+    <bpmn:endEvent id="EndEvent_Expired" name="Application Expired">
+      <bpmn:incoming>Flow_ToExpired</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:sequenceFlow id="Flow_TimeoutToReject" sourceRef="IntermediateCatch_Timeout" targetRef="EndEvent_Timeout" />
-    <bpmn:endEvent id="EndEvent_Timeout" name="Timeout Failure">
-      <bpmn:incoming>Flow_TimeoutToReject</bpmn:incoming>
+
+    <!-- Broadcaster -->
+    <bpmn:sequenceFlow id="Flow_ToBroadcasting" sourceRef="IntermediateCatch_Feedback" targetRef="SignalThrow_LoanApproved" />
+    <bpmn:intermediateThrowEvent id="SignalThrow_LoanApproved" name="Broadcast Approval">
+      <bpmn:incoming>Flow_ToBroadcasting</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToEndSuccess</bpmn:outgoing>
+      <bpmn:signalEventDefinition id="SignalEventDefinition_Approved" signalRef="Signal_LoanApproved" />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:endEvent id="EndEvent_Success" name="Loan Approved">
+      <bpmn:incoming>Flow_ToEndSuccess</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:subProcess id="EventSubprocess_Cancel" name="Cancellation Handler" triggeredByEvent="true">
-      <bpmn:startEvent id="StartEvent_Cancel" name="Cancel App">
-        <bpmn:extensionElements />
-        <bpmn:outgoing>Flow_Sub1</bpmn:outgoing>
-        <bpmn:messageEventDefinition id="MessageEventDefinition_3" messageRef="Message_Cancel" />
+    <bpmn:sequenceFlow id="Flow_ToEndSuccess" sourceRef="SignalThrow_LoanApproved" targetRef="EndEvent_Success" />
+
+    <!-- Global Handling -->
+    <bpmn:endEvent id="EndEvent_Error" name="Fatal Error">
+      <bpmn:incoming>Flow_ErrorEnd</bpmn:incoming>
+      <bpmn:errorEventDefinition id="ErrorEventDefinition_Fatal" errorRef="Error_Process" />
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_ErrorEnd" sourceRef="BoundaryEvent_CreditError" targetRef="EndEvent_Error" />
+
+    <!-- Event Subprocesses -->
+    <bpmn:subProcess id="EventSub_Cancel" name="Cancellation Handler" triggeredByEvent="true">
+      <bpmn:startEvent id="Start_Cancel" name="Abort Request">
+        <bpmn:outgoing>Flow_CancelToCleanup</bpmn:outgoing>
+        <bpmn:messageEventDefinition id="MsgCancelDef" messageRef="Message_Cancel" />
       </bpmn:startEvent>
-      <bpmn:sequenceFlow id="Flow_Sub1" sourceRef="StartEvent_Cancel" targetRef="ServiceTask_Cleanup" />
-      <bpmn:serviceTask id="ServiceTask_Cleanup" name="Cleanup Resources">
-        <bpmn:extensionElements>
-          <zeebe:taskDefinition type="cleanup-worker" />
-        </bpmn:extensionElements>
-        <bpmn:incoming>Flow_Sub1</bpmn:incoming>
-        <bpmn:outgoing>Flow_Sub2</bpmn:outgoing>
+      <bpmn:serviceTask id="Task_Cleanup" name="Cleanup Resources">
+        <bpmn:extensionElements><zeebe:taskDefinition type="cleanup" /></bpmn:extensionElements>
+        <bpmn:incoming>Flow_CancelToCleanup</bpmn:incoming>
+        <bpmn:outgoing>Flow_ToCancelEnd</bpmn:outgoing>
       </bpmn:serviceTask>
-      <bpmn:sequenceFlow id="Flow_Sub2" sourceRef="ServiceTask_Cleanup" targetRef="EndEvent_Canceled" />
-      <bpmn:endEvent id="EndEvent_Canceled" name="Canceled">
-        <bpmn:incoming>Flow_Sub2</bpmn:incoming>
+      <bpmn:endEvent id="End_Canceled" name="Process Terminated">
+        <bpmn:incoming>Flow_ToCancelEnd</bpmn:incoming>
       </bpmn:endEvent>
+      <bpmn:sequenceFlow id="Flow_CancelToCleanup" sourceRef="Start_Cancel" targetRef="Task_Cleanup" />
+      <bpmn:sequenceFlow id="Flow_ToCancelEnd" sourceRef="Task_Cleanup" targetRef="End_Canceled" />
     </bpmn:subProcess>
+
+    <bpmn:subProcess id="EventSub_Complaint" name="Complaint Tracker" triggeredByEvent="true">
+      <bpmn:startEvent id="Start_Complaint" name="Complaint Received" isInterrupting="false">
+        <bpmn:outgoing>Flow_CompToTask</bpmn:outgoing>
+        <bpmn:messageEventDefinition id="MsgCompDef" messageRef="Message_Complaint" />
+      </bpmn:startEvent>
+      <bpmn:serviceTask id="Task_LogComp" name="Log Complaint Entry">
+        <bpmn:extensionElements><zeebe:taskDefinition type="log-complaint" /></bpmn:extensionElements>
+        <bpmn:incoming>Flow_CompToTask</bpmn:incoming>
+        <bpmn:outgoing>Flow_ToCompEnd</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:endEvent id="End_Comp" name="Logged">
+        <bpmn:incoming>Flow_ToCompEnd</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="Flow_CompToTask" sourceRef="Start_Complaint" targetRef="Task_LogComp" />
+      <bpmn:sequenceFlow id="Flow_ToCompEnd" sourceRef="Task_LogComp" targetRef="End_Comp" />
+    </bpmn:subProcess>
+
+    <bpmn:subProcess id="EventSub_Pulse" name="Daily Health Check" triggeredByEvent="true">
+      <bpmn:startEvent id="Start_Pulse" name="Every 24h" isInterrupting="false">
+        <bpmn:outgoing>Flow_PulseToTask</bpmn:outgoing>
+        <bpmn:timerEventDefinition id="TimerDef_Pulse">
+          <bpmn:timeCycle xsi:type="bpmn:tFormalExpression">R/P1D</bpmn:timeCycle>
+        </bpmn:timerEventDefinition>
+      </bpmn:startEvent>
+      <bpmn:serviceTask id="Task_Pulse" name="Report Instance Status">
+        <bpmn:extensionElements><zeebe:taskDefinition type="instance-pulse" /></bpmn:extensionElements>
+        <bpmn:incoming>Flow_PulseToTask</bpmn:incoming>
+        <bpmn:outgoing>Flow_ToPulseEnd</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:endEvent id="End_Pulse" name="Pulse Sent">
+        <bpmn:incoming>Flow_ToPulseEnd</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="Flow_PulseToTask" sourceRef="Start_Pulse" targetRef="Task_Pulse" />
+      <bpmn:sequenceFlow id="Flow_ToPulseEnd" sourceRef="Task_Pulse" targetRef="End_Pulse" />
+    </bpmn:subProcess>
+
   </bpmn:process>
+
   <bpmn:error id="Error_CreditAPI" name="Credit API Error" errorCode="CREDIT_ERROR" />
-  <bpmn:error id="Error_Process" name="Process Error" errorCode="CREDIT_ERROR" />
+  <bpmn:error id="Error_Process" name="Process Error" errorCode="PROCESS_FATAL" />
+
   <bpmndi:BPMNDiagram id="BPMNDiagram_1">
     <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="loan_approval_process">
       <bpmndi:BPMNShape id="StartEvent_Message_di" bpmnElement="StartEvent_Message">
-        <dc:Bounds x="152" y="302" width="36" height="36" />
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="133" y="345" width="75" height="27" />
-        </bpmndi:BPMNLabel>
+        <dc:Bounds x="160" y="200" width="36" height="36" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Gateway_ParallelSplit_di" bpmnElement="Gateway_ParallelSplit">
-        <dc:Bounds x="235" y="295" width="50" height="50" />
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="294.5" y="306" width="55" height="27" />
-        </bpmndi:BPMNLabel>
+        <dc:Bounds x="250" y="193" width="50" height="50" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Activity_CreditCheck_di" bpmnElement="ServiceTask_CreditCheck">
-        <dc:Bounds x="330" y="190" width="100" height="80" />
+      <bpmndi:BPMNShape id="ServiceTask_CreditCheck_di" bpmnElement="ServiceTask_CreditCheck">
+        <dc:Bounds x="350" y="100" width="100" height="80" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EndEvent_Error_di" bpmnElement="EndEvent_Error">
-        <dc:Bounds x="472" y="142" width="36" height="36" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Activity_FraudCheck_di" bpmnElement="ServiceTask_FraudCheck">
-        <dc:Bounds x="330" y="360" width="100" height="80" />
+      <bpmndi:BPMNShape id="ServiceTask_FraudCheck_di" bpmnElement="ServiceTask_FraudCheck">
+        <dc:Bounds x="350" y="280" width="100" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Gateway_ParallelJoin_di" bpmnElement="Gateway_ParallelJoin">
-        <dc:Bounds x="485" y="295" width="50" height="50" />
+        <dc:Bounds x="500" y="193" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Inclusive_di" bpmnElement="Gateway_Inclusive">
+        <dc:Bounds x="600" y="193" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ServiceTask_Insurance_di" bpmnElement="ServiceTask_Insurance">
+        <dc:Bounds x="700" y="100" width="100" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Gateway_Risk_di" bpmnElement="Gateway_Risk" isMarkerVisible="true">
-        <dc:Bounds x="585" y="295" width="50" height="50" />
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="566" y="363" width="88" height="14" />
-        </bpmndi:BPMNLabel>
+        <dc:Bounds x="725" y="193" width="50" height="50" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EndEvent_Rejected_di" bpmnElement="EndEvent_Rejected">
-        <dc:Bounds x="692" y="392" width="36" height="36" />
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="674" y="433" width="71" height="14" />
-        </bpmndi:BPMNLabel>
+      <bpmndi:BPMNShape id="Gateway_InclusiveJoin_di" bpmnElement="Gateway_InclusiveJoin">
+        <dc:Bounds x="850" y="193" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SubProcess_DocAcquisition_di" bpmnElement="SubProcess_DocAcquisition" isExpanded="true">
+        <dc:Bounds x="950" y="100" width="400" height="200" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_DocAcq_di" bpmnElement="StartEvent_DocAcq">
+        <dc:Bounds x="970" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ServiceTask_RequestDocs_di" bpmnElement="ServiceTask_RequestDocs">
+        <dc:Bounds x="1040" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ReceiveTask_ReceiveDocs_di" bpmnElement="ReceiveTask_ReceiveDocs">
+        <dc:Bounds x="1170" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_DocAcq_di" bpmnElement="EndEvent_DocAcq">
+        <dc:Bounds x="1300" y="182" width="36" height="36" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="CallActivity_DocVerif_di" bpmnElement="CallActivity_DocVerif">
-        <dc:Bounds x="690" y="280" width="100" height="80" />
+        <dc:Bounds x="1400" y="160" width="100" height="80" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="UserTask_ManagerApproval_di" bpmnElement="UserTask_ManagerApproval">
-        <dc:Bounds x="850" y="280" width="100" height="80" />
+      <bpmndi:BPMNShape id="BusinessRuleTask_ApproveAmount_di" bpmnElement="BusinessRuleTask_ApproveAmount">
+        <dc:Bounds x="1550" y="160" width="100" height="80" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="ScriptTask_Escalation_di" bpmnElement="ScriptTask_Escalation">
-        <dc:Bounds x="980" y="160" width="100" height="80" />
+      <bpmndi:BPMNShape id="Gateway_DMNResult_di" bpmnElement="Gateway_DMNResult" isMarkerVisible="true">
+        <dc:Bounds x="1700" y="175" width="50" height="50" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EndEvent_SLA_di" bpmnElement="EndEvent_SLA">
-        <dc:Bounds x="1132" y="182" width="36" height="36" />
+      <bpmndi:BPMNShape id="UserTask_ManualReview_di" bpmnElement="UserTask_ManualReview">
+        <dc:Bounds x="1800" y="300" width="100" height="80" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Gateway_EventBased_di" bpmnElement="Gateway_EventBased">
-        <dc:Bounds x="1005" y="295" width="50" height="50" />
+      <bpmndi:BPMNShape id="IntermediateCatch_PolicyUpdated_di" bpmnElement="IntermediateCatch_PolicyUpdated">
+        <dc:Bounds x="1940" y="182" width="36" height="36" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="IntermediateCatch_CustomerSig_di" bpmnElement="IntermediateCatch_CustomerSig">
-        <dc:Bounds x="1102" y="242" width="36" height="36" />
+      <bpmndi:BPMNShape id="Gateway_WaitContract_di" bpmnElement="Gateway_WaitContract">
+        <dc:Bounds x="2030" y="175" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="IntermediateCatch_Feedback_di" bpmnElement="IntermediateCatch_Feedback">
+        <dc:Bounds x="2130" y="122" width="36" height="36" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="IntermediateCatch_Timeout_di" bpmnElement="IntermediateCatch_Timeout">
-        <dc:Bounds x="1102" y="352" width="36" height="36" />
+        <dc:Bounds x="2130" y="242" width="36" height="36" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EndEvent_Approved_di" bpmnElement="EndEvent_Approved">
-        <dc:Bounds x="1202" y="242" width="36" height="36" />
+      <bpmndi:BPMNShape id="SignalThrow_LoanApproved_di" bpmnElement="SignalThrow_LoanApproved">
+        <dc:Bounds x="2230" y="122" width="36" height="36" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EndEvent_Timeout_di" bpmnElement="EndEvent_Timeout">
-        <dc:Bounds x="1202" y="352" width="36" height="36" />
+      <bpmndi:BPMNShape id="EndEvent_Success_di" bpmnElement="EndEvent_Success">
+        <dc:Bounds x="2330" y="122" width="36" height="36" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EventSubprocess_Cancel_di" bpmnElement="EventSubprocess_Cancel" isExpanded="true">
-        <dc:Bounds x="150" y="500" width="350" height="200" />
+      <bpmndi:BPMNShape id="EndEvent_Expired_di" bpmnElement="EndEvent_Expired">
+        <dc:Bounds x="2330" y="242" width="36" height="36" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="StartEvent_Cancel_di" bpmnElement="StartEvent_Cancel">
-        <dc:Bounds x="190" y="580" width="36" height="36" />
+      <bpmndi:BPMNShape id="EndEvent_AutoRejected_di" bpmnElement="EndEvent_AutoRejected">
+        <dc:Bounds x="1850" y="102" width="36" height="36" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="ServiceTask_Cleanup_di" bpmnElement="ServiceTask_Cleanup">
-        <dc:Bounds x="280" y="558" width="100" height="80" />
+      <bpmndi:BPMNShape id="EndEvent_Rejected_di" bpmnElement="EndEvent_Rejected">
+        <dc:Bounds x="857" y="302" width="36" height="36" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EndEvent_Canceled_di" bpmnElement="EndEvent_Canceled">
-        <dc:Bounds x="430" y="580" width="36" height="36" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNEdge id="Flow_Sub1_di" bpmnElement="Flow_Sub1">
-        <di:waypoint x="226" y="598" />
-        <di:waypoint x="280" y="598" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_Sub2_di" bpmnElement="Flow_Sub2">
-        <di:waypoint x="380" y="598" />
-        <di:waypoint x="430" y="598" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNShape id="BoundaryEvent_SLA_di" bpmnElement="BoundaryEvent_SLA">
-        <dc:Bounds x="902" y="262" width="36" height="36" />
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="869" y="253" width="42" height="14" />
-        </bpmndi:BPMNLabel>
+      <bpmndi:BPMNShape id="EndEvent_Error_di" bpmnElement="EndEvent_Error">
+        <dc:Bounds x="507" y="32" width="36" height="36" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BoundaryEvent_CreditError_di" bpmnElement="BoundaryEvent_CreditError">
-        <dc:Bounds x="362" y="172" width="36" height="36" />
+        <dc:Bounds x="402" y="82" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BoundaryEvent_SLA_di" bpmnElement="BoundaryEvent_SLA">
+        <dc:Bounds x="1832" y="362" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="288" y="153" width="83" height="14" />
+          <dc:Bounds x="1805" y="403" width="53" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BoundaryEvent_Withdraw_di" bpmnElement="BoundaryEvent_Withdraw">
+        <dc:Bounds x="1882" y="362" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1893" y="403" width="53" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ServiceTask_Escalate_di" bpmnElement="ServiceTask_Escalate">
+        <dc:Bounds x="1700" y="450" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Escalated_di" bpmnElement="EndEvent_Escalated">
+        <dc:Bounds x="1732" y="562" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Withdrawn_di" bpmnElement="EndEvent_Withdrawn">
+        <dc:Bounds x="1982" y="402" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1975" y="445" width="51" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="EventSub_Cancel_di" bpmnElement="EventSub_Cancel" isExpanded="true">
+        <dc:Bounds x="160" y="700" width="300" height="150" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_Cancel_di" bpmnElement="Start_Cancel">
+        <dc:Bounds x="180" y="760" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Cleanup_di" bpmnElement="Task_Cleanup">
+        <dc:Bounds x="260" y="735" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Canceled_di" bpmnElement="End_Canceled">
+        <dc:Bounds x="390" y="760" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="EventSub_Complaint_di" bpmnElement="EventSub_Complaint" isExpanded="true">
+        <dc:Bounds x="500" y="700" width="300" height="150" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_Complaint_di" bpmnElement="Start_Complaint">
+        <dc:Bounds x="520" y="760" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_LogComp_di" bpmnElement="Task_LogComp">
+        <dc:Bounds x="600" y="735" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Comp_di" bpmnElement="End_Comp">
+        <dc:Bounds x="730" y="760" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="EventSub_Pulse_di" bpmnElement="EventSub_Pulse" isExpanded="true">
+        <dc:Bounds x="850" y="700" width="300" height="150" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_Pulse_di" bpmnElement="Start_Pulse">
+        <dc:Bounds x="870" y="760" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Pulse_di" bpmnElement="Task_Pulse">
+        <dc:Bounds x="950" y="735" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Pulse_di" bpmnElement="End_Pulse">
+        <dc:Bounds x="1080" y="760" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
       <bpmndi:BPMNEdge id="Flow_Start_di" bpmnElement="Flow_Start">
-        <di:waypoint x="188" y="320" />
-        <di:waypoint x="235" y="320" />
+        <di:waypoint x="196" y="218" />
+        <di:waypoint x="250" y="218" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_ToCredit_di" bpmnElement="Flow_ToCredit">
-        <di:waypoint x="260" y="295" />
-        <di:waypoint x="260" y="230" />
-        <di:waypoint x="330" y="230" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_ErrorEnd_di" bpmnElement="Flow_ErrorEnd">
-        <di:waypoint x="380" y="172" />
-        <di:waypoint x="380" y="160" />
-        <di:waypoint x="472" y="160" />
+        <di:waypoint x="300" y="218" />
+        <di:waypoint x="325" y="218" />
+        <di:waypoint x="325" y="140" />
+        <di:waypoint x="350" y="140" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_ToFraud_di" bpmnElement="Flow_ToFraud">
-        <di:waypoint x="260" y="345" />
-        <di:waypoint x="260" y="400" />
-        <di:waypoint x="330" y="400" />
+        <di:waypoint x="300" y="218" />
+        <di:waypoint x="325" y="218" />
+        <di:waypoint x="325" y="320" />
+        <di:waypoint x="350" y="320" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_FromCredit_di" bpmnElement="Flow_FromCredit">
-        <di:waypoint x="430" y="230" />
-        <di:waypoint x="510" y="230" />
-        <di:waypoint x="510" y="295" />
+        <di:waypoint x="450" y="140" />
+        <di:waypoint x="475" y="140" />
+        <di:waypoint x="475" y="218" />
+        <di:waypoint x="500" y="218" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_FromFraud_di" bpmnElement="Flow_FromFraud">
-        <di:waypoint x="430" y="400" />
-        <di:waypoint x="510" y="400" />
-        <di:waypoint x="510" y="345" />
+        <di:waypoint x="450" y="320" />
+        <di:waypoint x="475" y="320" />
+        <di:waypoint x="475" y="218" />
+        <di:waypoint x="500" y="218" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_ToRiskXOR_di" bpmnElement="Flow_ToRiskXOR">
-        <di:waypoint x="535" y="320" />
-        <di:waypoint x="585" y="320" />
+      <bpmndi:BPMNEdge id="Flow_ToInclusive_di" bpmnElement="Flow_ToInclusive">
+        <di:waypoint x="550" y="218" />
+        <di:waypoint x="600" y="218" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_RiskRejected_di" bpmnElement="Flow_RiskRejected">
-        <di:waypoint x="610" y="345" />
-        <di:waypoint x="610" y="410" />
-        <di:waypoint x="692" y="410" />
+      <bpmndi:BPMNEdge id="Flow_ToInsurance_di" bpmnElement="Flow_ToInsurance">
+        <di:waypoint x="625" y="193" />
+        <di:waypoint x="625" y="140" />
+        <di:waypoint x="700" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToRisk_di" bpmnElement="Flow_ToRisk">
+        <di:waypoint x="650" y="218" />
+        <di:waypoint x="725" y="218" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_FromInsur_di" bpmnElement="Flow_FromInsur">
+        <di:waypoint x="800" y="140" />
+        <di:waypoint x="875" y="140" />
+        <di:waypoint x="875" y="193" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_RiskAccepted_di" bpmnElement="Flow_RiskAccepted">
-        <di:waypoint x="635" y="320" />
-        <di:waypoint x="690" y="320" />
+        <di:waypoint x="775" y="218" />
+        <di:waypoint x="850" y="218" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="579" y="256" width="82" height="27" />
+          <dc:Bounds x="784" y="186" width="61" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_ToUserTask_di" bpmnElement="Flow_ToUserTask">
-        <di:waypoint x="790" y="320" />
-        <di:waypoint x="850" y="320" />
+      <bpmndi:BPMNEdge id="Flow_RiskRejected_di" bpmnElement="Flow_RiskRejected">
+        <di:waypoint x="750" y="243" />
+        <di:waypoint x="750" y="320" />
+        <di:waypoint x="857" y="320" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_SLAEscalation_di" bpmnElement="Flow_SLAEscalation">
-        <di:waypoint x="920" y="262" />
-        <di:waypoint x="920" y="200" />
-        <di:waypoint x="980" y="200" />
+      <bpmndi:BPMNEdge id="Flow_ToDocAcq_di" bpmnElement="Flow_ToDocAcq">
+        <di:waypoint x="900" y="218" />
+        <di:waypoint x="950" y="218" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_SLAEnd_di" bpmnElement="Flow_SLAEnd">
-        <di:waypoint x="1080" y="200" />
-        <di:waypoint x="1132" y="200" />
+      <bpmndi:BPMNEdge id="Flow_ToReq_di" bpmnElement="Flow_ToReq">
+        <di:waypoint x="1006" y="200" />
+        <di:waypoint x="1040" y="200" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_ToEventBased_di" bpmnElement="Flow_ToEventBased">
-        <di:waypoint x="950" y="320" />
-        <di:waypoint x="1005" y="320" />
+      <bpmndi:BPMNEdge id="Flow_ToRec_di" bpmnElement="Flow_ToRec">
+        <di:waypoint x="1140" y="200" />
+        <di:waypoint x="1170" y="200" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_ToCatchMessage_di" bpmnElement="Flow_ToCatchMessage">
-        <di:waypoint x="1030" y="295" />
-        <di:waypoint x="1030" y="260" />
-        <di:waypoint x="1102" y="260" />
+      <bpmndi:BPMNEdge id="Flow_ToEndAcq_di" bpmnElement="Flow_ToEndAcq">
+        <di:waypoint x="1270" y="200" />
+        <di:waypoint x="1300" y="200" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_ToCatchTimer_di" bpmnElement="Flow_ToCatchTimer">
-        <di:waypoint x="1030" y="345" />
-        <di:waypoint x="1030" y="370" />
-        <di:waypoint x="1102" y="370" />
+      <bpmndi:BPMNEdge id="Flow_ToDocVerif_di" bpmnElement="Flow_ToDocVerif">
+        <di:waypoint x="1350" y="200" />
+        <di:waypoint x="1400" y="200" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_ToApproveEnd_di" bpmnElement="Flow_ToApproveEnd">
-        <di:waypoint x="1138" y="260" />
-        <di:waypoint x="1202" y="260" />
+      <bpmndi:BPMNEdge id="Flow_ToDMN_di" bpmnElement="Flow_ToDMN">
+        <di:waypoint x="1500" y="200" />
+        <di:waypoint x="1550" y="200" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_TimeoutToReject_di" bpmnElement="Flow_TimeoutToReject">
-        <di:waypoint x="1138" y="370" />
-        <di:waypoint x="1202" y="370" />
+      <bpmndi:BPMNEdge id="Flow_AfterDMN_di" bpmnElement="Flow_AfterDMN">
+        <di:waypoint x="1650" y="200" />
+        <di:waypoint x="1700" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AutoApproved_di" bpmnElement="Flow_AutoApproved">
+        <di:waypoint x="1750" y="200" />
+        <di:waypoint x="1940" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_NeedsReview_di" bpmnElement="Flow_NeedsReview">
+        <di:waypoint x="1725" y="225" />
+        <di:waypoint x="1725" y="340" />
+        <di:waypoint x="1800" y="340" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToRejectedDMN_di" bpmnElement="Flow_ToRejectedDMN">
+        <di:waypoint x="1725" y="175" />
+        <di:waypoint x="1725" y="120" />
+        <di:waypoint x="1850" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_FromManual_di" bpmnElement="Flow_FromManual">
+        <di:waypoint x="1900" y="340" />
+        <di:waypoint x="1958" y="340" />
+        <di:waypoint x="1958" y="218" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Escalation_di" bpmnElement="Flow_Escalation">
+        <di:waypoint x="1832" y="398" />
+        <di:waypoint x="1832" y="490" />
+        <di:waypoint x="1800" y="490" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_EndEscalation_di" bpmnElement="Flow_EndEscalation">
+        <di:waypoint x="1750" y="530" />
+        <di:waypoint x="1750" y="562" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Withdrawal_di" bpmnElement="Flow_Withdrawal">
+        <di:waypoint x="1918" y="380" />
+        <di:waypoint x="2000" y="380" />
+        <di:waypoint x="2000" y="402" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToEventGateway_di" bpmnElement="Flow_ToEventGateway">
+        <di:waypoint x="1976" y="200" />
+        <di:waypoint x="2030" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_FeedCatch_di" bpmnElement="Flow_FeedCatch">
+        <di:waypoint x="2055" y="175" />
+        <di:waypoint x="2055" y="140" />
+        <di:waypoint x="2130" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_TimeCatch_di" bpmnElement="Flow_TimeCatch">
+        <di:waypoint x="2055" y="225" />
+        <di:waypoint x="2055" y="260" />
+        <di:waypoint x="2130" y="260" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToBroadcasting_di" bpmnElement="Flow_ToBroadcasting">
+        <di:waypoint x="2166" y="140" />
+        <di:waypoint x="2230" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToEndSuccess_di" bpmnElement="Flow_ToEndSuccess">
+        <di:waypoint x="2266" y="140" />
+        <di:waypoint x="2330" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToExpired_di" bpmnElement="Flow_ToExpired">
+        <di:waypoint x="2166" y="260" />
+        <di:waypoint x="2330" y="260" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ErrorEnd_di" bpmnElement="Flow_ErrorEnd">
+        <di:waypoint x="420" y="82" />
+        <di:waypoint x="420" y="50" />
+        <di:waypoint x="507" y="50" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Flow_CancelToCleanup_di" bpmnElement="Flow_CancelToCleanup">
+        <di:waypoint x="216" y="778" />
+        <di:waypoint x="260" y="778" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToCancelEnd_di" bpmnElement="Flow_ToCancelEnd">
+        <di:waypoint x="360" y="778" />
+        <di:waypoint x="390" y="778" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CompToTask_di" bpmnElement="Flow_CompToTask">
+        <di:waypoint x="556" y="778" />
+        <di:waypoint x="600" y="778" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToCompEnd_di" bpmnElement="Flow_ToCompEnd">
+        <di:waypoint x="700" y="778" />
+        <di:waypoint x="730" y="778" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_PulseToTask_di" bpmnElement="Flow_PulseToTask">
+        <di:waypoint x="906" y="778" />
+        <di:waypoint x="950" y="778" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ToPulseEnd_di" bpmnElement="Flow_ToPulseEnd">
+        <di:waypoint x="1050" y="778" />
+        <di:waypoint x="1080" y="778" />
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>

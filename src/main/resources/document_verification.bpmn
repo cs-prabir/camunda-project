@@ -12,9 +12,18 @@
       <bpmn:incoming>Flow_1</bpmn:incoming>
       <bpmn:outgoing>Flow_2</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:sequenceFlow id="Flow_2" sourceRef="ServiceTask_VerifyDoc" targetRef="EndEvent_1" />
-    <bpmn:endEvent id="EndEvent_1" name="Document Verified">
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="ServiceTask_VerifyDoc" targetRef="Event_LinkThrow" />
+    <bpmn:intermediateThrowEvent id="Event_LinkThrow" name="Go to Verification Result">
       <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:linkEventDefinition id="LinkEventDefinition_Throw" name="verification_result" />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:intermediateCatchEvent id="Event_LinkCatch" name="Receive Verification Result">
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+      <bpmn:linkEventDefinition id="LinkEventDefinition_Catch" name="verification_result" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Event_LinkCatch" targetRef="EndEvent_1" />
+    <bpmn:endEvent id="EndEvent_1" name="Document Verified">
+      <bpmn:incoming>Flow_3</bpmn:incoming>
     </bpmn:endEvent>
   </bpmn:process>
   <bpmndi:BPMNDiagram id="BPMNDiagram_1">
@@ -29,10 +38,22 @@
         <dc:Bounds x="270" y="137" width="100" height="80" />
         <bpmndi:BPMNLabel />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
-        <dc:Bounds x="432" y="159" width="36" height="36" />
+      <bpmndi:BPMNShape id="Event_LinkThrow_di" bpmnElement="Event_LinkThrow">
+        <dc:Bounds x="420" y="159" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="422" y="202" width="56" height="27" />
+          <dc:Bounds x="401" y="202" width="75" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_LinkCatch_di" bpmnElement="Event_LinkCatch">
+        <dc:Bounds x="179" y="309" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="160" y="352" width="75" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
+        <dc:Bounds x="329" y="309" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="319" y="352" width="56" height="27" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
@@ -41,7 +62,11 @@
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
         <di:waypoint x="370" y="177" />
-        <di:waypoint x="432" y="177" />
+        <di:waypoint x="420" y="177" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_3_di" bpmnElement="Flow_3">
+        <di:waypoint x="215" y="327" />
+        <di:waypoint x="329" y="327" />
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>

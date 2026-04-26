@@ -12,7 +12,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @Deployment(resources = {
 		"classpath:document_verification.bpmn",
 		"classpath:loan_approval_process.bpmn",
-		"classpath:manager-approval-form.form"
+		"classpath:manager-approval-form.form",
+		"classpath:loan-decision.dmn"
 })
 public class CamundaApplication {
 
